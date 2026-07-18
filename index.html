@@ -61,6 +61,7 @@ const TEAMS = {
 const DOM = { blue: "#006491", blueDark: "#00415F", red: "#E31837", gold: "#F2C94C", ink: "#0E3A52", grey: "#5B7486" };
 const KICKOFF = Date.UTC(2026, 6, 19, 19, 0, 0); // 22:00 שעון ישראל
 const MY_ID_KEY = "wc-my-id";
+const ADMIN_PIN_KEY = "wc-admin-pin";
 const NOTICE_SEEN_KEY = "wc-notice-seen";
 const LEADER_SEEN_KEY = "wc-leader-seen";
 
@@ -263,6 +264,7 @@ function App() {
   useEffect(() => {
     (async () => {
       const storedId = localStorage.getItem(MY_ID_KEY);
+      const storedAdminPin = localStorage.getItem(ADMIN_PIN_KEY);
       const r = await refresh();
       if (r.results && hasVal(r.results.noteTs) && !localStorage.getItem(NOTICE_SEEN_KEY)) {
         localStorage.setItem(NOTICE_SEEN_KEY, r.results.noteTs); // לא מציגים הודעות ישנות בכניסה ראשונה
@@ -271,6 +273,18 @@ function App() {
       if (initialLeader && !localStorage.getItem(LEADER_SEEN_KEY)) {
         localStorage.setItem(LEADER_SEEN_KEY, initialLeader.sig); // לא מציגים שינוי הובלה בכניסה ראשונה
       }
+
+      if (storedAdminPin) {
+        const check = await api("auth", { pin: storedAdminPin });
+        if (check.ok) {
+          setAdminPin(storedAdminPin);
+          setTab("leaders");
+          setPhase("admin");
+          return;
+        }
+        localStorage.removeItem(ADMIN_PIN_KEY); // הקוד השתנה — לא נשארים תקועים
+      }
+
       const ps = r.participants || [];
       const mine = storedId && ps.find((p) => p.id === storedId);
       if (mine) { setMyId(storedId); setMe(mine); setPhase("main"); }
@@ -358,6 +372,14 @@ function App() {
     refresh();
   }
 
+  function logoutAdmin() {
+    localStorage.removeItem(ADMIN_PIN_KEY);
+    setAdminPin(null);
+    setAdminOpen(false);
+    setPinInput("");
+    setPhase("register");
+  }
+
   const scored = participants
     .map((p) => ({ p, s: scoreParticipant(p, results) }))
     .sort((a, b) => b.s.total - a.s.total);
@@ -435,9 +457,221 @@ function App() {
     </div>
   );
 
+  const PopupOverlay = popupNote && (
+    <div className="fixed inset-0 flex items-center justify-center p-5" style={{ background: "rgba(0,20,32,.72)", zIndex: 70 }}
+      onClick={() => setPopupQueue((q) => q.slice(1))}>
+      {popupNote.kind === "leader" ? (
+        <div className="notice-pop text-center rounded-3xl px-6 py-7 max-w-sm w-full"
+          style={{ background: "linear-gradient(135deg, #1E7A3C, #0E4F27)", border: "4px solid " + DOM.gold, boxShadow: "0 12px 40px rgba(0,0,0,.55)" }}
+          onClick={(e) => e.stopPropagation()}>
+          <div className="notice-icon" style={{ fontSize: 44 }}>👑</div>
+          <div className="text-xs font-bold gold-text mt-1">יש מוביל חדש!</div>
+          <div className="wc-display text-white mt-1" style={{ fontSize: 36, lineHeight: 1.15 }}>{popupNote.names.join(" ו-")}</div>
+          <div className="gold-text font-black mt-1">{popupNote.score} נקודות 🏆</div>
+          <button onClick={() => setPopupQueue((q) => q.slice(1))}
+            className="mt-4 w-full rounded-xl py-2 font-black" style={{ background: "#fff", color: "#1E7A3C" }}>
+            יאללה! ⚽
+          </button>
+        </div>
+      ) : (
+        <div className="notice-pop text-center rounded-3xl px-6 py-7 max-w-sm w-full"
+          style={{ background: "linear-gradient(135deg, " + DOM.red + ", #B4102C)", border: "4px solid #fff", boxShadow: "0 12px 40px rgba(0,0,0,.55)" }}
+          onClick={(e) => e.stopPropagation()}>
+          <div className="notice-icon" style={{ fontSize: 44 }}>📣</div>
+          <div className="wc-display text-white mt-1" style={{ fontSize: 38, lineHeight: 1.15 }}>{popupNote.text}</div>
+          <button onClick={() => setPopupQueue((q) => q.slice(1))}
+            className="mt-4 w-full rounded-xl py-2 font-black" style={{ background: "#fff", color: DOM.red }}>
+            הבנתי! ⚽
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  const AllTab = (
+    <div className="space-y-3">
+      {participants.length === 0 && <div className="card p-5 text-center font-bold">עדיין אין נרשמים — תהיו הראשונים!</div>}
+      {participants.map((p) => {
+        const pr = p.prediction || {};
+        const team = TEAMS[pr.winner];
+        return (
+          <div key={p.id} className="card p-4" style={{ borderRight: "5px solid " + (team ? team.color : "#BFD3DE") }}>
+            <div className="flex items-center justify-between">
+              <div className="font-black text-lg" style={{ color: DOM.ink }}>
+                {p.name} {p.id === myId && <span className="text-xs font-bold" style={{ color: DOM.red }}>(את/ה)</span>}
+              </div>
+              <div className="text-xs font-bold rounded-full px-2 py-1 gold-text" style={{ background: DOM.blue }}>דקת זהב: {p.goldenMinute}'</div>
+            </div>
+            <div className="text-sm mt-1" style={{ color: DOM.grey }}>
+              {team ? <span className="font-bold" style={{ color: team.color }}>{team.flag} {team.name}</span> : "עוד לא ניחש/ה"}
+              {hasVal(pr.scoreSpain) && hasVal(pr.scoreArgentina) && (
+                <span> · תוצאה {pr.scoreSpain}:{pr.scoreArgentina}</span>
+              )}
+              {hasVal(pr.firstScorer) && <span> · מבקיע ראשון: {pr.firstScorer}</span>}
+              {hasVal(pr.firstGoalMinute) && <span> · דקה {pr.firstGoalMinute}'</span>}
+            </div>
+            {isAdmin && (
+              <button onClick={() => deleteParticipant(p.id)} className="mt-2 text-xs font-bold" style={{ color: DOM.red }}>
+                הסרת משתתף
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const LeadersTab = (
+    <div className="space-y-3">
+      <div className="card p-4" style={{ borderTop: "6px solid " + DOM.blue }}>
+        <div className="wc-display text-2xl mb-1" style={{ color: DOM.blue }}>מצב המשחק</div>
+        {hasAnyResult ? (
+          <div className="text-sm font-bold" style={{ color: DOM.ink }}>
+            {hasVal(results.winner) && <div>🏆 מנצחת: {TEAMS[results.winner] && TEAMS[results.winner].flag} {TEAMS[results.winner] && TEAMS[results.winner].name}</div>}
+            {hasVal(results.scoreSpain) && hasVal(results.scoreArgentina) && (
+              <div>📊 תוצאה: ספרד {results.scoreSpain} : {results.scoreArgentina} ארגנטינה</div>
+            )}
+            {hasVal(results.firstScorer) && <div>⚽ מבקיע ראשון: {results.firstScorer}</div>}
+            {hasVal(results.firstGoalMinute) && <div>⏱️ דקת השער הראשון: {results.firstGoalMinute}'</div>}
+          </div>
+        ) : (
+          <div className="text-sm" style={{ color: DOM.grey }}>עוד לא הוזנו תוצאות — הדירוג יתעדכן ברגע שהמשחק יתחיל. הדף מתרענן אוטומטית כמו פיצה בתנור ⏳🍕</div>
+        )}
+        {hasVal(results && results.note) && (
+          <div className="mt-2 text-xs font-bold" style={{ color: DOM.red }}>📣 עדכון אחרון: {results.note}</div>
+        )}
+      </div>
+
+      {(goldenWinners.length > 0 || goldenClosest) && (
+        <div className="card p-4 leader-pulse" style={{ border: "3px solid " + DOM.gold }}>
+          <div className="wc-display text-2xl" style={{ color: "#A8842B" }}>🌟 דקת הזהב</div>
+          {goldenWinners.length > 0 ? (
+            <div className="font-black" style={{ color: DOM.ink }}>פגיעה מדויקת! {goldenWinners.map((p) => p.name).join(", ")} 🥳</div>
+          ) : (
+            <div className="font-bold text-sm" style={{ color: DOM.ink }}>אין פגיעה מדויקת — הכי קרוב: {goldenClosest.name} (דקה {goldenClosest.goldenMinute}')</div>
+          )}
+        </div>
+      )}
+
+      {scored.map(({ p, s }, i) => {
+        const leader = hasAnyResult && s.total === topScore && topScore > 0;
+        return (
+          <div key={p.id} className={"card p-4 flex items-center gap-3 " + (leader ? "leader-pulse" : "")}
+            style={leader ? { border: "3px solid " + DOM.red } : {}}>
+            <div className="wc-display text-3xl w-8 text-center" style={{ color: leader ? DOM.red : "#93A8B5" }}>
+              {leader ? "👑" : i + 1}
+            </div>
+            <div className="flex-1">
+              <div className="font-black" style={{ color: DOM.ink }}>{p.name}</div>
+              {s.parts.length > 0 && (
+                <div className="text-xs" style={{ color: DOM.grey }}>
+                  {s.parts.map((x) => x.label + " +" + x.pts).join(" · ")}
+                </div>
+              )}
+            </div>
+            <div className="wc-display text-4xl" style={{ color: leader ? DOM.red : DOM.blue }}>{s.total}</div>
+          </div>
+        );
+      })}
+      {scored.length === 0 && <div className="card p-5 text-center font-bold">אין עדיין משתתפים</div>}
+    </div>
+  );
+
+  const AdminModal = adminOpen && (
+    <div className="fixed inset-0 flex items-end justify-center p-3" style={{ background: "rgba(0,30,45,.7)", zIndex: 50 }} dir="rtl">
+      <div className="card w-full max-w-md p-5 overflow-auto" style={{ maxHeight: "90vh", borderTop: "6px solid " + DOM.red }}>
+        <div className="flex justify-between items-center mb-3">
+          <div className="wc-display text-3xl" style={{ color: DOM.blue }}>עמדת השופט ⚙️</div>
+          <button onClick={() => setAdminOpen(false)} className="font-black text-xl" style={{ color: DOM.ink }}>✕</button>
+        </div>
+
+        {!isAdmin ? (
+          <div>
+            <Field label="קוד ניהול">
+              <input style={inputStyle} type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="****" />
+            </Field>
+            <button onClick={async () => {
+              const r = await api("auth", { pin: pinInput });
+              if (r.ok) {
+                setAdminPin(pinInput);
+                localStorage.setItem(ADMIN_PIN_KEY, pinInput); // המכשיר הזה יזוהה כמנהל מעכשיו, בלי הרשמה
+                if (phase === "register") { setPhase("admin"); setTab("leaders"); setAdminOpen(false); }
+              } else flash(r.error || "קוד שגוי");
+            }}
+              className="w-full rounded-xl py-3 font-black text-white" style={{ background: DOM.blue }}>
+              כניסה
+            </button>
+          </div>
+        ) : (
+          <div>
+            <p className="text-xs mb-3" style={{ color: DOM.grey }}>מעדכנים תוך כדי המשחק — כל שדה שתמלאו יעדכן מיד את הדירוג אצל כולם. אפשר למלא חלקית (למשל רק את השער הראשון).</p>
+
+            <Field label="נעילת ניחושים (בשריקת הפתיחה) — נשמר מיד לכולם">
+              <button onClick={toggleLock}
+                className="w-full rounded-xl py-2 font-black"
+                style={{ background: adminForm.locked ? DOM.red : "#DCE8EF", color: adminForm.locked ? "#fff" : DOM.ink }}>
+                {adminForm.locked ? "🔒 נעול — לחצו לפתיחה" : "🔓 פתוח — לחצו לנעילה"}
+              </button>
+            </Field>
+
+            <Field label="מנצחת">
+              <select style={inputStyle} value={adminForm.winner} onChange={(e) => setAdminForm((f) => ({ ...f, winner: e.target.value }))}>
+                <option value="">— טרם הוכרע —</option>
+                <option value="spain">🇪🇸 ספרד</option>
+                <option value="argentina">🇦🇷 ארגנטינה</option>
+              </select>
+            </Field>
+
+            <Field label="תוצאה (ספרד : ארגנטינה)">
+              <div className="flex items-center gap-2">
+                <input type="number" min="0" style={inputStyle} value={adminForm.scoreSpain}
+                  onChange={(e) => setAdminForm((f) => ({ ...f, scoreSpain: e.target.value }))} />
+                <span className="wc-display text-2xl">:</span>
+                <input type="number" min="0" style={inputStyle} value={adminForm.scoreArgentina}
+                  onChange={(e) => setAdminForm((f) => ({ ...f, scoreArgentina: e.target.value }))} />
+              </div>
+            </Field>
+
+            <Field label="המבקיע הראשון">
+              <input style={inputStyle} value={adminForm.firstScorer}
+                onChange={(e) => setAdminForm((f) => ({ ...f, firstScorer: e.target.value }))} placeholder="שם השחקן" />
+            </Field>
+
+            <Field label="דקת השער הראשון">
+              <input type="number" min="1" max="120" style={inputStyle} value={adminForm.firstGoalMinute}
+                onChange={(e) => setAdminForm((f) => ({ ...f, firstGoalMinute: e.target.value }))} />
+            </Field>
+
+            <Field label="הודעה לכולם (אופציונלי)">
+              <input style={inputStyle} value={adminForm.note}
+                onChange={(e) => setAdminForm((f) => ({ ...f, note: e.target.value }))} placeholder="למשל: גול!! מסי בדקה 23 🔥" />
+            </Field>
+            <button onClick={sendNotice} disabled={busy}
+              className="w-full rounded-xl py-3 font-black text-lg text-white mb-4"
+              style={{ background: DOM.blue }}>
+              {busy ? "משגר..." : "📣 שיגור הודעה כפופ-אפ לכולם"}
+            </button>
+            <p className="text-xs -mt-3 mb-4" style={{ color: DOM.grey }}>ההודעה תקפוץ מיד על המסך של כל המשתתפים, בכל לשונית שהם נמצאים בה — לא רק תופיע ברשימה.</p>
+
+            <button onClick={() => saveResults()} disabled={busy}
+              className="w-full rounded-xl py-3 font-black text-lg text-white" style={{ background: DOM.red }}>
+              {busy ? "מעדכן..." : "עדכון בזמן אמת 📣"}
+            </button>
+            <p className="text-xs mt-2 text-center" style={{ color: DOM.grey }}>הסרת משתתפים זמינה בלשונית "משתתפים".</p>
+
+            <button onClick={logoutAdmin} className="w-full rounded-xl py-2 mt-4 text-xs font-bold" style={{ background: "#EFF6FA", color: DOM.grey }}>
+              יציאה ממצב ניהול במכשיר הזה
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   if (phase === "register") {
     return (
       <div className="wc-root dom-bg min-h-screen" dir="rtl">
+        {PopupOverlay}
         {Header}
         <div className="max-w-md mx-auto px-4 pb-10">
           <div className="card p-5" style={{ borderTop: "6px solid " + DOM.red }}>
@@ -459,43 +693,55 @@ function App() {
           <p className="text-center text-xs mt-4" style={{ color: "#A7C4D4" }}>
             שימו לב: הניחושים והשמות גלויים לכל המשתתפים בתחרות.
           </p>
+          <div className="text-center mt-6">
+            <button onClick={() => setAdminOpen(true)} className="text-xs font-bold" style={{ color: "#A7C4D4" }}>
+              ⚙️ אני מנהל/ת המוקד — כניסה בלי הרשמה
+            </button>
+          </div>
         </div>
+        {AdminModal}
+      </div>
+    );
+  }
+
+  if (phase === "admin") {
+    return (
+      <div className="wc-root dom-bg min-h-screen pb-16" dir="rtl">
+        {PopupOverlay}
+        {Header}
+        <div className="max-w-md mx-auto px-4">
+          <div className="rounded-xl px-4 py-2 mb-4 text-center font-black text-white" style={{ background: DOM.blue }}>
+            🔧 מצב מנהל — ללא הרשמה כמשתתף
+          </div>
+
+          <div className="flex gap-1 rounded-xl p-1 mb-4" style={{ background: "rgba(255,255,255,.14)" }}>
+            {[["all", "משתתפים (" + participants.length + ")"], ["leaders", "מי מוביל 🏆"]].map(([k, label]) => (
+              <button key={k} onClick={() => { setTab(k); refresh(); }}
+                className="flex-1 rounded-lg py-2 text-sm font-bold"
+                style={tab === k ? { background: "#fff", color: DOM.blue } : { color: "#fff" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {msg && <div className="mb-3 text-center text-sm font-bold rounded-lg py-2 text-white" style={{ background: DOM.red }}>{msg}</div>}
+
+          {tab === "all" && AllTab}
+          {tab === "leaders" && LeadersTab}
+
+          <button onClick={() => setAdminOpen(true)}
+            className="w-full rounded-xl py-3 mt-6 font-black text-lg text-white" style={{ background: DOM.red }}>
+            ⚙️ פתיחת עמדת השופט
+          </button>
+        </div>
+        {AdminModal}
       </div>
     );
   }
 
   return (
     <div className="wc-root dom-bg min-h-screen pb-16" dir="rtl">
-      {popupNote && (
-        <div className="fixed inset-0 flex items-center justify-center p-5" style={{ background: "rgba(0,20,32,.72)", zIndex: 70 }}
-          onClick={() => setPopupQueue((q) => q.slice(1))}>
-          {popupNote.kind === "leader" ? (
-            <div className="notice-pop text-center rounded-3xl px-6 py-7 max-w-sm w-full"
-              style={{ background: "linear-gradient(135deg, #1E7A3C, #0E4F27)", border: "4px solid " + DOM.gold, boxShadow: "0 12px 40px rgba(0,0,0,.55)" }}
-              onClick={(e) => e.stopPropagation()}>
-              <div className="notice-icon" style={{ fontSize: 44 }}>👑</div>
-              <div className="text-xs font-bold gold-text mt-1">יש מוביל חדש!</div>
-              <div className="wc-display text-white mt-1" style={{ fontSize: 36, lineHeight: 1.15 }}>{popupNote.names.join(" ו-")}</div>
-              <div className="gold-text font-black mt-1">{popupNote.score} נקודות 🏆</div>
-              <button onClick={() => setPopupQueue((q) => q.slice(1))}
-                className="mt-4 w-full rounded-xl py-2 font-black" style={{ background: "#fff", color: "#1E7A3C" }}>
-                יאללה! ⚽
-              </button>
-            </div>
-          ) : (
-            <div className="notice-pop text-center rounded-3xl px-6 py-7 max-w-sm w-full"
-              style={{ background: "linear-gradient(135deg, " + DOM.red + ", #B4102C)", border: "4px solid #fff", boxShadow: "0 12px 40px rgba(0,0,0,.55)" }}
-              onClick={(e) => e.stopPropagation()}>
-              <div className="notice-icon" style={{ fontSize: 44 }}>📣</div>
-              <div className="wc-display text-white mt-1" style={{ fontSize: 38, lineHeight: 1.15 }}>{popupNote.text}</div>
-              <button onClick={() => setPopupQueue((q) => q.slice(1))}
-                className="mt-4 w-full rounded-xl py-2 font-black" style={{ background: "#fff", color: DOM.red }}>
-                הבנתי! ⚽
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      {PopupOverlay}
       {Header}
       <div className="max-w-md mx-auto px-4">
         <div className="flex gap-1 rounded-xl p-1 mb-4" style={{ background: "rgba(255,255,255,.14)" }}>
@@ -575,94 +821,9 @@ function App() {
           </div>
         )}
 
-        {tab === "all" && (
-          <div className="space-y-3">
-            {participants.length === 0 && <div className="card p-5 text-center font-bold">עדיין אין נרשמים — תהיו הראשונים!</div>}
-            {participants.map((p) => {
-              const pr = p.prediction || {};
-              const team = TEAMS[pr.winner];
-              return (
-                <div key={p.id} className="card p-4" style={{ borderRight: "5px solid " + (team ? team.color : "#BFD3DE") }}>
-                  <div className="flex items-center justify-between">
-                    <div className="font-black text-lg" style={{ color: DOM.ink }}>
-                      {p.name} {p.id === myId && <span className="text-xs font-bold" style={{ color: DOM.red }}>(את/ה)</span>}
-                    </div>
-                    <div className="text-xs font-bold rounded-full px-2 py-1 gold-text" style={{ background: DOM.blue }}>דקת זהב: {p.goldenMinute}'</div>
-                  </div>
-                  <div className="text-sm mt-1" style={{ color: DOM.grey }}>
-                    {team ? <span className="font-bold" style={{ color: team.color }}>{team.flag} {team.name}</span> : "עוד לא ניחש/ה"}
-                    {hasVal(pr.scoreSpain) && hasVal(pr.scoreArgentina) && (
-                      <span> · תוצאה {pr.scoreSpain}:{pr.scoreArgentina}</span>
-                    )}
-                    {hasVal(pr.firstScorer) && <span> · מבקיע ראשון: {pr.firstScorer}</span>}
-                    {hasVal(pr.firstGoalMinute) && <span> · דקה {pr.firstGoalMinute}'</span>}
-                  </div>
-                  {isAdmin && (
-                    <button onClick={() => deleteParticipant(p.id)} className="mt-2 text-xs font-bold" style={{ color: DOM.red }}>
-                      הסרת משתתף
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {tab === "all" && AllTab}
 
-        {tab === "leaders" && (
-          <div className="space-y-3">
-            <div className="card p-4" style={{ borderTop: "6px solid " + DOM.blue }}>
-              <div className="wc-display text-2xl mb-1" style={{ color: DOM.blue }}>מצב המשחק</div>
-              {hasAnyResult ? (
-                <div className="text-sm font-bold" style={{ color: DOM.ink }}>
-                  {hasVal(results.winner) && <div>🏆 מנצחת: {TEAMS[results.winner] && TEAMS[results.winner].flag} {TEAMS[results.winner] && TEAMS[results.winner].name}</div>}
-                  {hasVal(results.scoreSpain) && hasVal(results.scoreArgentina) && (
-                    <div>📊 תוצאה: ספרד {results.scoreSpain} : {results.scoreArgentina} ארגנטינה</div>
-                  )}
-                  {hasVal(results.firstScorer) && <div>⚽ מבקיע ראשון: {results.firstScorer}</div>}
-                  {hasVal(results.firstGoalMinute) && <div>⏱️ דקת השער הראשון: {results.firstGoalMinute}'</div>}
-                </div>
-              ) : (
-                <div className="text-sm" style={{ color: DOM.grey }}>עוד לא הוזנו תוצאות — הדירוג יתעדכן ברגע שהמשחק יתחיל. הדף מתרענן אוטומטית כמו פיצה בתנור ⏳🍕</div>
-              )}
-              {hasVal(results && results.note) && (
-                <div className="mt-2 text-xs font-bold" style={{ color: DOM.red }}>📣 עדכון אחרון: {results.note}</div>
-              )}
-            </div>
-
-            {(goldenWinners.length > 0 || goldenClosest) && (
-              <div className="card p-4 leader-pulse" style={{ border: "3px solid " + DOM.gold }}>
-                <div className="wc-display text-2xl" style={{ color: "#A8842B" }}>🌟 דקת הזהב</div>
-                {goldenWinners.length > 0 ? (
-                  <div className="font-black" style={{ color: DOM.ink }}>פגיעה מדויקת! {goldenWinners.map((p) => p.name).join(", ")} 🥳</div>
-                ) : (
-                  <div className="font-bold text-sm" style={{ color: DOM.ink }}>אין פגיעה מדויקת — הכי קרוב: {goldenClosest.name} (דקה {goldenClosest.goldenMinute}')</div>
-                )}
-              </div>
-            )}
-
-            {scored.map(({ p, s }, i) => {
-              const leader = hasAnyResult && s.total === topScore && topScore > 0;
-              return (
-                <div key={p.id} className={"card p-4 flex items-center gap-3 " + (leader ? "leader-pulse" : "")}
-                  style={leader ? { border: "3px solid " + DOM.red } : {}}>
-                  <div className="wc-display text-3xl w-8 text-center" style={{ color: leader ? DOM.red : "#93A8B5" }}>
-                    {leader ? "👑" : i + 1}
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-black" style={{ color: DOM.ink }}>{p.name}</div>
-                    {s.parts.length > 0 && (
-                      <div className="text-xs" style={{ color: DOM.grey }}>
-                        {s.parts.map((x) => x.label + " +" + x.pts).join(" · ")}
-                      </div>
-                    )}
-                  </div>
-                  <div className="wc-display text-4xl" style={{ color: leader ? DOM.red : DOM.blue }}>{s.total}</div>
-                </div>
-              );
-            })}
-            {scored.length === 0 && <div className="card p-5 text-center font-bold">אין עדיין משתתפים</div>}
-          </div>
-        )}
+        {tab === "leaders" && LeadersTab}
 
         <div className="text-center mt-6">
           <button onClick={() => setAdminOpen(true)} className="text-xs font-bold" style={{ color: "#A7C4D4" }}>
@@ -671,88 +832,7 @@ function App() {
         </div>
       </div>
 
-      {adminOpen && (
-        <div className="fixed inset-0 flex items-end justify-center p-3" style={{ background: "rgba(0,30,45,.7)", zIndex: 50 }} dir="rtl">
-          <div className="card w-full max-w-md p-5 overflow-auto" style={{ maxHeight: "90vh", borderTop: "6px solid " + DOM.red }}>
-            <div className="flex justify-between items-center mb-3">
-              <div className="wc-display text-3xl" style={{ color: DOM.blue }}>עמדת השופט ⚙️</div>
-              <button onClick={() => setAdminOpen(false)} className="font-black text-xl" style={{ color: DOM.ink }}>✕</button>
-            </div>
-
-            {!isAdmin ? (
-              <div>
-                <Field label="קוד ניהול">
-                  <input style={inputStyle} type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="****" />
-                </Field>
-                <button onClick={async () => {
-                  const r = await api("auth", { pin: pinInput });
-                  if (r.ok) setAdminPin(pinInput); else flash(r.error || "קוד שגוי");
-                }}
-                  className="w-full rounded-xl py-3 font-black text-white" style={{ background: DOM.blue }}>
-                  כניסה
-                </button>
-              </div>
-            ) : (
-              <div>
-                <p className="text-xs mb-3" style={{ color: DOM.grey }}>מעדכנים תוך כדי המשחק — כל שדה שתמלאו יעדכן מיד את הדירוג אצל כולם. אפשר למלא חלקית (למשל רק את השער הראשון).</p>
-
-                <Field label="נעילת ניחושים (בשריקת הפתיחה) — נשמר מיד לכולם">
-                  <button onClick={toggleLock}
-                    className="w-full rounded-xl py-2 font-black"
-                    style={{ background: adminForm.locked ? DOM.red : "#DCE8EF", color: adminForm.locked ? "#fff" : DOM.ink }}>
-                    {adminForm.locked ? "🔒 נעול — לחצו לפתיחה" : "🔓 פתוח — לחצו לנעילה"}
-                  </button>
-                </Field>
-
-                <Field label="מנצחת">
-                  <select style={inputStyle} value={adminForm.winner} onChange={(e) => setAdminForm((f) => ({ ...f, winner: e.target.value }))}>
-                    <option value="">— טרם הוכרע —</option>
-                    <option value="spain">🇪🇸 ספרד</option>
-                    <option value="argentina">🇦🇷 ארגנטינה</option>
-                  </select>
-                </Field>
-
-                <Field label="תוצאה (ספרד : ארגנטינה)">
-                  <div className="flex items-center gap-2">
-                    <input type="number" min="0" style={inputStyle} value={adminForm.scoreSpain}
-                      onChange={(e) => setAdminForm((f) => ({ ...f, scoreSpain: e.target.value }))} />
-                    <span className="wc-display text-2xl">:</span>
-                    <input type="number" min="0" style={inputStyle} value={adminForm.scoreArgentina}
-                      onChange={(e) => setAdminForm((f) => ({ ...f, scoreArgentina: e.target.value }))} />
-                  </div>
-                </Field>
-
-                <Field label="המבקיע הראשון">
-                  <input style={inputStyle} value={adminForm.firstScorer}
-                    onChange={(e) => setAdminForm((f) => ({ ...f, firstScorer: e.target.value }))} placeholder="שם השחקן" />
-                </Field>
-
-                <Field label="דקת השער הראשון">
-                  <input type="number" min="1" max="120" style={inputStyle} value={adminForm.firstGoalMinute}
-                    onChange={(e) => setAdminForm((f) => ({ ...f, firstGoalMinute: e.target.value }))} />
-                </Field>
-
-                <Field label="הודעה לכולם (אופציונלי)">
-                  <input style={inputStyle} value={adminForm.note}
-                    onChange={(e) => setAdminForm((f) => ({ ...f, note: e.target.value }))} placeholder="למשל: גול!! מסי בדקה 23 🔥" />
-                </Field>
-                <button onClick={sendNotice} disabled={busy}
-                  className="w-full rounded-xl py-3 font-black text-lg text-white mb-4"
-                  style={{ background: DOM.blue }}>
-                  {busy ? "משגר..." : "📣 שיגור הודעה כפופ-אפ לכולם"}
-                </button>
-                <p className="text-xs -mt-3 mb-4" style={{ color: DOM.grey }}>ההודעה תקפוץ מיד על המסך של כל המשתתפים, בכל לשונית שהם נמצאים בה — לא רק תופיע ברשימה.</p>
-
-                <button onClick={() => saveResults()} disabled={busy}
-                  className="w-full rounded-xl py-3 font-black text-lg text-white" style={{ background: DOM.red }}>
-                  {busy ? "מעדכן..." : "עדכון בזמן אמת 📣"}
-                </button>
-                <p className="text-xs mt-2 text-center" style={{ color: DOM.grey }}>הסרת משתתפים זמינה בלשונית "משתתפים" כשאתם מחוברים כמנהלים.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {AdminModal}
     </div>
   );
 }
