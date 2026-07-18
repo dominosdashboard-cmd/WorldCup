@@ -47,7 +47,7 @@ const { useState, useEffect, useCallback, useRef } = React;
 
 // ================================================================
 // 👇 מדביקים כאן את כתובת ה-Web App מ-Google Apps Script 👇
-const API_URL = "https://script.google.com/macros/s/AKfycbxoNE0OgcpVwAS1gnKTLlR_xfko54ibiF9AtvS4ahHo3tOKpfVsiTV3NQARnQGRRNMPyg/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxI9TOWSWcP6bfACEJbLDkssMITiITd3VhKX9QfLIHgMLpnL2C5vNavlk42CDeyxJDISA/exec";
 // ================================================================
 
 const TEAMS = {
@@ -70,20 +70,23 @@ async function api(action, payload) {
 function normName(s) {
   return (s || "").trim().toLowerCase().replace(/[.'"׳״-]/g, "").replace(/\s+/g, " ");
 }
+function hasVal(v) {
+  return v !== "" && v !== null && v !== undefined && v !== "undefined" && v !== "null";
+}
 function scoreParticipant(p, res) {
   if (!res) return { total: 0, parts: [] };
   const parts = [];
   const pr = p.prediction || {};
-  if (res.winner && pr.winner && res.winner === pr.winner) parts.push({ label: "מנצחת", pts: 3 });
-  if (res.scoreSpain !== "" && res.scoreSpain != null && res.scoreArgentina !== "" && res.scoreArgentina != null && pr.scoreSpain !== "" && pr.scoreSpain != null) {
+  if (hasVal(res.winner) && hasVal(pr.winner) && res.winner === pr.winner) parts.push({ label: "מנצחת", pts: 3 });
+  if (hasVal(res.scoreSpain) && hasVal(res.scoreArgentina) && hasVal(pr.scoreSpain) && hasVal(pr.scoreArgentina)) {
     if (Number(res.scoreSpain) === Number(pr.scoreSpain) && Number(res.scoreArgentina) === Number(pr.scoreArgentina))
       parts.push({ label: "תוצאה מדויקת", pts: 5 });
   }
-  if (res.firstScorer && pr.firstScorer) {
+  if (hasVal(res.firstScorer) && hasVal(pr.firstScorer)) {
     const a = normName(res.firstScorer), b = normName(pr.firstScorer);
     if (a && b && (a === b || a.includes(b) || b.includes(a))) parts.push({ label: "מבקיע ראשון", pts: 4 });
   }
-  if (res.firstGoalMinute !== "" && res.firstGoalMinute != null && pr.firstGoalMinute !== "" && pr.firstGoalMinute != null) {
+  if (hasVal(res.firstGoalMinute) && hasVal(pr.firstGoalMinute)) {
     const d = Math.abs(Number(res.firstGoalMinute) - Number(pr.firstGoalMinute));
     if (d === 0) parts.push({ label: "דקת שער מדויקת", pts: 4 });
     else if (d <= 5) parts.push({ label: "דקת שער קרובה (±5)", pts: 2 });
@@ -289,11 +292,11 @@ function App() {
     .map((p) => ({ p, s: scoreParticipant(p, results) }))
     .sort((a, b) => b.s.total - a.s.total);
   const topScore = scored.length ? scored[0].s.total : 0;
-  const hasAnyResult = results && (results.winner || results.firstScorer || (results.firstGoalMinute !== "" && results.firstGoalMinute != null) || (results.scoreSpain !== "" && results.scoreSpain != null));
+  const hasAnyResult = results && (hasVal(results.winner) || hasVal(results.firstScorer) || hasVal(results.firstGoalMinute) || (hasVal(results.scoreSpain) && hasVal(results.scoreArgentina)));
 
   const goldenWinners = [];
   let goldenClosest = null;
-  if (results && results.firstGoalMinute !== "" && results.firstGoalMinute != null) {
+  if (results && hasVal(results.firstGoalMinute)) {
     const gm = Number(results.firstGoalMinute);
     let best = Infinity;
     for (const p of participants) {
@@ -488,11 +491,11 @@ function App() {
                   </div>
                   <div className="text-sm mt-1" style={{ color: DOM.grey }}>
                     {team ? <span className="font-bold" style={{ color: team.color }}>{team.flag} {team.name}</span> : "עוד לא ניחש/ה"}
-                    {pr.scoreSpain !== "" && pr.scoreSpain != null && pr.scoreArgentina !== "" && pr.scoreArgentina != null && (
+                    {hasVal(pr.scoreSpain) && hasVal(pr.scoreArgentina) && (
                       <span> · תוצאה {pr.scoreSpain}:{pr.scoreArgentina}</span>
                     )}
-                    {pr.firstScorer && <span> · מבקיע ראשון: {pr.firstScorer}</span>}
-                    {pr.firstGoalMinute !== "" && pr.firstGoalMinute != null && <span> · דקה {pr.firstGoalMinute}'</span>}
+                    {hasVal(pr.firstScorer) && <span> · מבקיע ראשון: {pr.firstScorer}</span>}
+                    {hasVal(pr.firstGoalMinute) && <span> · דקה {pr.firstGoalMinute}'</span>}
                   </div>
                   {isAdmin && (
                     <button onClick={() => deleteParticipant(p.id)} className="mt-2 text-xs font-bold" style={{ color: DOM.red }}>
@@ -511,18 +514,23 @@ function App() {
               <div className="wc-display text-2xl mb-1" style={{ color: DOM.blue }}>מצב המשחק</div>
               {hasAnyResult ? (
                 <div className="text-sm font-bold" style={{ color: DOM.ink }}>
-                  {results.winner && <div>🏆 מנצחת: {TEAMS[results.winner] && TEAMS[results.winner].flag} {TEAMS[results.winner] && TEAMS[results.winner].name}</div>}
-                  {results.scoreSpain !== "" && results.scoreSpain != null && results.scoreArgentina !== "" && results.scoreArgentina != null && (
+                  {hasVal(results.winner) && <div>🏆 מנצחת: {TEAMS[results.winner] && TEAMS[results.winner].flag} {TEAMS[results.winner] && TEAMS[results.winner].name}</div>}
+                  {hasVal(results.scoreSpain) && hasVal(results.scoreArgentina) && (
                     <div>📊 תוצאה: ספרד {results.scoreSpain} : {results.scoreArgentina} ארגנטינה</div>
                   )}
-                  {results.firstScorer && <div>⚽ מבקיע ראשון: {results.firstScorer}</div>}
-                  {results.firstGoalMinute !== "" && results.firstGoalMinute != null && <div>⏱️ דקת השער הראשון: {results.firstGoalMinute}'</div>}
-                  {results.note && <div className="mt-1" style={{ color: DOM.grey }}>📣 {results.note}</div>}
+                  {hasVal(results.firstScorer) && <div>⚽ מבקיע ראשון: {results.firstScorer}</div>}
+                  {hasVal(results.firstGoalMinute) && <div>⏱️ דקת השער הראשון: {results.firstGoalMinute}'</div>}
                 </div>
               ) : (
                 <div className="text-sm" style={{ color: DOM.grey }}>עוד לא הוזנו תוצאות — הדירוג יתעדכן ברגע שהמשחק יתחיל. הדף מתרענן אוטומטית כמו פיצה בתנור ⏳🍕</div>
               )}
             </div>
+
+            {hasVal(results && results.note) && (
+              <div className="leader-pulse text-center rounded-2xl px-4 py-4" style={{ background: "linear-gradient(135deg, " + DOM.red + ", #B4102C)", border: "3px solid #fff", boxShadow: "0 6px 20px rgba(0,0,0,.4)" }}>
+                <div className="wc-display text-white" style={{ fontSize: 34, lineHeight: 1.1 }}>📣 {results.note}</div>
+              </div>
+            )}
 
             {(goldenWinners.length > 0 || goldenClosest) && (
               <div className="card p-4 leader-pulse" style={{ border: "3px solid " + DOM.gold }}>
