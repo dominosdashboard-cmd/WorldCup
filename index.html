@@ -36,8 +36,12 @@ animation:beams 6s ease-in-out infinite;}
 @keyframes wave{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
 .ball-anim{animation:kick 6s ease-in-out infinite;}
 @keyframes kick{0%,100%{transform:translate(0,0)}25%{transform:translate(70px,6px)}50%{transform:translate(130px,-5px)}75%{transform:translate(45px,12px)}}
+@keyframes noticeIn{0%{opacity:0;transform:scale(.7) translateY(20px);}60%{opacity:1;transform:scale(1.04) translateY(0);}100%{opacity:1;transform:scale(1) translateY(0);}}
+.notice-pop{animation:noticeIn .45s cubic-bezier(.34,1.56,.64,1) both;}
+@keyframes noticeBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+.notice-icon{display:inline-block;animation:noticeBounce 1.1s ease-in-out infinite;}
 input,select{font-family:'Heebo',sans-serif;}
-@media (prefers-reduced-motion: reduce){.leader-pulse,.hero-in,.hero-in-2,.stadium-lights,.fan,.ball-anim{animation:none;}}
+@media (prefers-reduced-motion: reduce){.leader-pulse,.hero-in,.hero-in-2,.stadium-lights,.fan,.ball-anim,.notice-pop,.notice-icon{animation:none;}}
 </style>
 </head>
 <body>
@@ -47,7 +51,7 @@ const { useState, useEffect, useCallback, useRef } = React;
 
 // ================================================================
 // 👇 מדביקים כאן את כתובת ה-Web App מ-Google Apps Script 👇
-const API_URL = "https://script.google.com/macros/s/AKfycbxI9TOWSWcP6bfACEJbLDkssMITiITd3VhKX9QfLIHgMLpnL2C5vNavlk42CDeyxJDISA/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxOK66fIj87nHkmwFpGd7qwsMvzqRUO5BIAAWqkG-r3AT09-xHKwLReHUjns_j457M48A/exec";
 // ================================================================
 
 const TEAMS = {
@@ -57,6 +61,8 @@ const TEAMS = {
 const DOM = { blue: "#006491", blueDark: "#00415F", red: "#E31837", gold: "#F2C94C", ink: "#0E3A52", grey: "#5B7486" };
 const KICKOFF = Date.UTC(2026, 6, 19, 19, 0, 0); // 22:00 שעון ישראל
 const MY_ID_KEY = "wc-my-id";
+const NOTICE_SEEN_KEY = "wc-notice-seen";
+const LEADER_SEEN_KEY = "wc-leader-seen";
 
 async function api(action, payload) {
   try {
@@ -92,6 +98,18 @@ function scoreParticipant(p, res) {
     else if (d <= 5) parts.push({ label: "דקת שער קרובה (±5)", pts: 2 });
   }
   return { total: parts.reduce((s, x) => s + x.pts, 0), parts };
+}
+
+function computeLeaderInfo(participants, results) {
+  if (!results) return null;
+  const hasAny = hasVal(results.winner) || hasVal(results.firstScorer) || hasVal(results.firstGoalMinute) || (hasVal(results.scoreSpain) && hasVal(results.scoreArgentina));
+  if (!hasAny || !participants || !participants.length) return null;
+  const scored = participants.map((p) => ({ p, s: scoreParticipant(p, results) }));
+  const top = scored.reduce((m, x) => Math.max(m, x.s.total), 0);
+  if (top <= 0) return null;
+  const leaders = scored.filter((x) => x.s.total === top);
+  const sig = top + ":" + leaders.map((x) => x.p.id).sort().join(",");
+  return { sig: sig, names: leaders.map((x) => x.p.name), score: top };
 }
 
 const CROWD = (() => {
@@ -196,6 +214,38 @@ function App() {
   const [adminForm, setAdminForm] = useState({ winner: "", scoreSpain: "", scoreArgentina: "", firstScorer: "", firstGoalMinute: "", locked: false, note: "" });
   const [now, setNow] = useState(Date.now());
   const editingRef = useRef(false);
+  const [popupQueue, setPopupQueue] = useState([]);
+
+  function pushPopup(item) {
+    setPopupQueue((q) => [...q, item]);
+  }
+
+  function checkNotice(res) {
+    if (res && hasVal(res.note) && hasVal(res.noteTs)) {
+      const seen = localStorage.getItem(NOTICE_SEEN_KEY);
+      if (res.noteTs !== seen) {
+        localStorage.setItem(NOTICE_SEEN_KEY, res.noteTs);
+        pushPopup({ kind: "note", text: res.note });
+      }
+    }
+  }
+
+  function checkLeader(participants, res) {
+    const info = computeLeaderInfo(participants, res);
+    if (!info) return;
+    const seen = localStorage.getItem(LEADER_SEEN_KEY);
+    if (info.sig !== seen) {
+      localStorage.setItem(LEADER_SEEN_KEY, info.sig);
+      if (seen !== null) pushPopup({ kind: "leader", names: info.names, score: info.score });
+    }
+  }
+
+  const popupNote = popupQueue[0] || null;
+  useEffect(() => {
+    if (!popupNote) return;
+    const t = setTimeout(() => setPopupQueue((q) => q.slice(1)), 7000);
+    return () => clearTimeout(t);
+  }, [popupNote]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -214,6 +264,13 @@ function App() {
     (async () => {
       const storedId = localStorage.getItem(MY_ID_KEY);
       const r = await refresh();
+      if (r.results && hasVal(r.results.noteTs) && !localStorage.getItem(NOTICE_SEEN_KEY)) {
+        localStorage.setItem(NOTICE_SEEN_KEY, r.results.noteTs); // לא מציגים הודעות ישנות בכניסה ראשונה
+      }
+      const initialLeader = computeLeaderInfo(r.participants || [], r.results);
+      if (initialLeader && !localStorage.getItem(LEADER_SEEN_KEY)) {
+        localStorage.setItem(LEADER_SEEN_KEY, initialLeader.sig); // לא מציגים שינוי הובלה בכניסה ראשונה
+      }
       const ps = r.participants || [];
       const mine = storedId && ps.find((p) => p.id === storedId);
       if (mine) { setMyId(storedId); setMe(mine); setPhase("main"); }
@@ -227,6 +284,8 @@ function App() {
       if (!r.ok) return;
       setParticipants(r.participants || []);
       setResults(r.results || null);
+      checkNotice(r.results);
+      checkLeader(r.participants || [], r.results);
       if (myId && !editingRef.current) {
         const fresh = (r.participants || []).find((p) => p.id === myId);
         if (fresh) setMe(fresh);
@@ -280,6 +339,17 @@ function App() {
     const r = await api("saveResults", { pin: adminPin, results: nf });
     if (r.ok) { setResults(r.results); flash(nf.locked ? "הניחושים ננעלו לכולם 🔒" : "הניחושים נפתחו מחדש 🔓"); }
     else flash(r.error || "הנעילה נכשלה");
+  }
+
+  async function sendNotice() {
+    if (!adminForm.note || !adminForm.note.trim()) { flash("כתבו הודעה קודם"); return; }
+    setBusy(true);
+    const nf = { ...adminForm, noteTs: String(Date.now()) };
+    setAdminForm(nf);
+    const r = await api("saveResults", { pin: adminPin, results: nf });
+    setBusy(false);
+    if (r.ok) { setResults(r.results); flash("ההודעה נשלחה לכולם כפופ-אפ 📣✨"); }
+    else flash(r.error || "השליחה נכשלה");
   }
 
   async function deleteParticipant(id) {
@@ -396,6 +466,36 @@ function App() {
 
   return (
     <div className="wc-root dom-bg min-h-screen pb-16" dir="rtl">
+      {popupNote && (
+        <div className="fixed inset-0 flex items-center justify-center p-5" style={{ background: "rgba(0,20,32,.72)", zIndex: 70 }}
+          onClick={() => setPopupQueue((q) => q.slice(1))}>
+          {popupNote.kind === "leader" ? (
+            <div className="notice-pop text-center rounded-3xl px-6 py-7 max-w-sm w-full"
+              style={{ background: "linear-gradient(135deg, #1E7A3C, #0E4F27)", border: "4px solid " + DOM.gold, boxShadow: "0 12px 40px rgba(0,0,0,.55)" }}
+              onClick={(e) => e.stopPropagation()}>
+              <div className="notice-icon" style={{ fontSize: 44 }}>👑</div>
+              <div className="text-xs font-bold gold-text mt-1">יש מוביל חדש!</div>
+              <div className="wc-display text-white mt-1" style={{ fontSize: 36, lineHeight: 1.15 }}>{popupNote.names.join(" ו-")}</div>
+              <div className="gold-text font-black mt-1">{popupNote.score} נקודות 🏆</div>
+              <button onClick={() => setPopupQueue((q) => q.slice(1))}
+                className="mt-4 w-full rounded-xl py-2 font-black" style={{ background: "#fff", color: "#1E7A3C" }}>
+                יאללה! ⚽
+              </button>
+            </div>
+          ) : (
+            <div className="notice-pop text-center rounded-3xl px-6 py-7 max-w-sm w-full"
+              style={{ background: "linear-gradient(135deg, " + DOM.red + ", #B4102C)", border: "4px solid #fff", boxShadow: "0 12px 40px rgba(0,0,0,.55)" }}
+              onClick={(e) => e.stopPropagation()}>
+              <div className="notice-icon" style={{ fontSize: 44 }}>📣</div>
+              <div className="wc-display text-white mt-1" style={{ fontSize: 38, lineHeight: 1.15 }}>{popupNote.text}</div>
+              <button onClick={() => setPopupQueue((q) => q.slice(1))}
+                className="mt-4 w-full rounded-xl py-2 font-black" style={{ background: "#fff", color: DOM.red }}>
+                הבנתי! ⚽
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {Header}
       <div className="max-w-md mx-auto px-4">
         <div className="flex gap-1 rounded-xl p-1 mb-4" style={{ background: "rgba(255,255,255,.14)" }}>
@@ -524,13 +624,10 @@ function App() {
               ) : (
                 <div className="text-sm" style={{ color: DOM.grey }}>עוד לא הוזנו תוצאות — הדירוג יתעדכן ברגע שהמשחק יתחיל. הדף מתרענן אוטומטית כמו פיצה בתנור ⏳🍕</div>
               )}
+              {hasVal(results && results.note) && (
+                <div className="mt-2 text-xs font-bold" style={{ color: DOM.red }}>📣 עדכון אחרון: {results.note}</div>
+              )}
             </div>
-
-            {hasVal(results && results.note) && (
-              <div className="leader-pulse text-center rounded-2xl px-4 py-4" style={{ background: "linear-gradient(135deg, " + DOM.red + ", #B4102C)", border: "3px solid #fff", boxShadow: "0 6px 20px rgba(0,0,0,.4)" }}>
-                <div className="wc-display text-white" style={{ fontSize: 34, lineHeight: 1.1 }}>📣 {results.note}</div>
-              </div>
-            )}
 
             {(goldenWinners.length > 0 || goldenClosest) && (
               <div className="card p-4 leader-pulse" style={{ border: "3px solid " + DOM.gold }}>
@@ -639,6 +736,12 @@ function App() {
                   <input style={inputStyle} value={adminForm.note}
                     onChange={(e) => setAdminForm((f) => ({ ...f, note: e.target.value }))} placeholder="למשל: גול!! מסי בדקה 23 🔥" />
                 </Field>
+                <button onClick={sendNotice} disabled={busy}
+                  className="w-full rounded-xl py-3 font-black text-lg text-white mb-4"
+                  style={{ background: DOM.blue }}>
+                  {busy ? "משגר..." : "📣 שיגור הודעה כפופ-אפ לכולם"}
+                </button>
+                <p className="text-xs -mt-3 mb-4" style={{ color: DOM.grey }}>ההודעה תקפוץ מיד על המסך של כל המשתתפים, בכל לשונית שהם נמצאים בה — לא רק תופיע ברשימה.</p>
 
                 <button onClick={() => saveResults()} disabled={busy}
                   className="w-full rounded-xl py-3 font-black text-lg text-white" style={{ background: DOM.red }}>
