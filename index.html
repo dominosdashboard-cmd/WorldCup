@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WINNER המוקד — גמר המונדיאל 2026 🍕🏆</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Karantina:wght@700&family=Heebo:wght@400;500;700;900&display=swap');
+.wc-root{font-family:'Heebo',sans-serif;}
+.wc-display{font-family:'Karantina',cursive;letter-spacing:.5px;}
+.dom-bg{
+  background-color:#00415F;
+  background-image:radial-gradient(rgba(255,255,255,0.07) 3px, transparent 3.5px);
+  background-size:46px 46px;
+}
+.card{background:#FFFFFF;border-radius:14px;box-shadow:0 2px 10px rgba(0,0,0,.28);}
+.gold-text{color:#F2C94C;}
+@keyframes pulseRed{0%,100%{box-shadow:0 0 0 0 rgba(227,24,55,.5);}50%{box-shadow:0 0 0 8px rgba(227,24,55,0);}}
+.leader-pulse{animation:pulseRed 2s infinite;}
+.stadium-lights{position:fixed;inset:0;pointer-events:none;
+background:
+ conic-gradient(from 116deg at -2% -4%, transparent 0deg, rgba(255,255,255,.22) 12deg, transparent 30deg),
+ conic-gradient(from 212deg at 102% -4%, transparent 0deg, rgba(255,255,255,.22) 12deg, transparent 30deg),
+ radial-gradient(ellipse 55% 30% at 50% -6%, rgba(143,203,232,.12), transparent 65%),
+ radial-gradient(ellipse 80% 30% at 50% 108%, rgba(0,0,0,.35), transparent 70%);
+animation:beams 6s ease-in-out infinite;}
+@keyframes beams{0%,100%{opacity:.7}50%{opacity:1}}
+@keyframes heroIn{from{opacity:0;transform:translateY(-16px) scale(.94);}to{opacity:1;transform:none;}}
+.hero-in{animation:heroIn .7s ease-out both;}
+.hero-in-2{animation:heroIn .7s .15s ease-out both;}
+.fan{animation:wave 2.6s ease-in-out infinite;}
+@keyframes wave{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+.ball-anim{animation:kick 6s ease-in-out infinite;}
+@keyframes kick{0%,100%{transform:translate(0,0)}25%{transform:translate(70px,6px)}50%{transform:translate(130px,-5px)}75%{transform:translate(45px,12px)}}
+input,select{font-family:'Heebo',sans-serif;}
+@media (prefers-reduced-motion: reduce){.leader-pulse,.hero-in,.hero-in-2,.stadium-lights,.fan,.ball-anim{animation:none;}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ================================================================
+// 👇 מדביקים כאן את כתובת ה-Web App מ-Google Apps Script 👇
+const API_URL = "https://script.google.com/macros/s/AKfycbxoNE0OgcpVwAS1gnKTLlR_xfko54ibiF9AtvS4ahHo3tOKpfVsiTV3NQARnQGRRNMPyg/exec";
+// ================================================================
+
+const TEAMS = {
+  spain: { name: "ספרד", flag: "🇪🇸", color: "#E31837", soft: "#FDE6EA" },
+  argentina: { name: "ארגנטינה", flag: "🇦🇷", color: "#006491", soft: "#E3F0F7" },
+};
+const DOM = { blue: "#006491", blueDark: "#00415F", red: "#E31837", gold: "#F2C94C", ink: "#0E3A52", grey: "#5B7486" };
+const KICKOFF = Date.UTC(2026, 6, 19, 19, 0, 0); // 22:00 שעון ישראל
+const MY_ID_KEY = "wc-my-id";
+
+async function api(action, payload) {
+  try {
+    const r = await fetch(API_URL, { method: "POST", body: JSON.stringify({ action, payload: payload || {} }) });
+    return await r.json();
+  } catch (e) {
+    return { ok: false, error: "בעיית תקשורת — בדקו חיבור לאינטרנט ונסו שוב" };
+  }
+}
+
+function normName(s) {
+  return (s || "").trim().toLowerCase().replace(/[.'"׳״-]/g, "").replace(/\s+/g, " ");
+}
+function scoreParticipant(p, res) {
+  if (!res) return { total: 0, parts: [] };
+  const parts = [];
+  const pr = p.prediction || {};
+  if (res.winner && pr.winner && res.winner === pr.winner) parts.push({ label: "מנצחת", pts: 3 });
+  if (res.scoreSpain !== "" && res.scoreSpain != null && res.scoreArgentina !== "" && res.scoreArgentina != null && pr.scoreSpain !== "" && pr.scoreSpain != null) {
+    if (Number(res.scoreSpain) === Number(pr.scoreSpain) && Number(res.scoreArgentina) === Number(pr.scoreArgentina))
+      parts.push({ label: "תוצאה מדויקת", pts: 5 });
+  }
+  if (res.firstScorer && pr.firstScorer) {
+    const a = normName(res.firstScorer), b = normName(pr.firstScorer);
+    if (a && b && (a === b || a.includes(b) || b.includes(a))) parts.push({ label: "מבקיע ראשון", pts: 4 });
+  }
+  if (res.firstGoalMinute !== "" && res.firstGoalMinute != null && pr.firstGoalMinute !== "" && pr.firstGoalMinute != null) {
+    const d = Math.abs(Number(res.firstGoalMinute) - Number(pr.firstGoalMinute));
+    if (d === 0) parts.push({ label: "דקת שער מדויקת", pts: 4 });
+    else if (d <= 5) parts.push({ label: "דקת שער קרובה (±5)", pts: 2 });
+  }
+  return { total: parts.reduce((s, x) => s + x.pts, 0), parts };
+}
+
+const CROWD = (() => {
+  const cols = ["#E31837", "#8FCBE8", "#F2C94C", "#F5F5F5", "#006491", "#FF9DAC"];
+  const rows = [{ rx: 272, ry: 106 }, { rx: 254, ry: 96 }, { rx: 236, ry: 87 }];
+  const arr = [];
+  rows.forEach((row, r) => {
+    const n = 46;
+    for (let i = 0; i <= n; i++) {
+      const a = Math.PI + (i / n) * Math.PI;
+      arr.push({
+        x: Math.round((300 + row.rx * Math.cos(a)) * 10) / 10,
+        y: Math.round((150 + row.ry * Math.sin(a)) * 10) / 10,
+        f: cols[(r * 7 + i * 5) % cols.length],
+        d: (i * 0.07 + r * 0.12).toFixed(2),
+      });
+    }
+  });
+  return arr;
+})();
+
+function StadiumStrip() {
+  return (
+    <div className="mt-4" style={{ marginLeft: -16, marginRight: -16, lineHeight: 0 }}>
+      <svg width="100%" height="140" viewBox="0 0 600 152" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+        <defs><clipPath id="pitchClip"><ellipse cx="300" cy="150" rx="206" ry="80" /></clipPath></defs>
+        <ellipse cx="300" cy="150" rx="292" ry="118" fill="#052435" stroke="#0A5A80" strokeWidth="4" />
+        {[{ x: 118, y: 46 }, { x: 300, y: 26 }, { x: 482, y: 46 }].map((p, i) => (
+          <g key={i}>
+            <circle cx={p.x} cy={p.y} r="12" fill="rgba(242,201,76,.18)" />
+            <rect x={p.x - 9} y={p.y - 4} width="18" height="6" rx="3" fill="#F2C94C" />
+          </g>
+        ))}
+        {CROWD.map((d, i) => (
+          <circle key={i} className="fan" style={{ animationDelay: d.d + "s" }} cx={d.x} cy={d.y} r="2.8" fill={d.f} opacity="0.92" />
+        ))}
+        <ellipse cx="300" cy="150" rx="206" ry="80" fill="#1E7A3C" />
+        <g clipPath="url(#pitchClip)">
+          {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+            <rect key={i} x={94 + i * 60} y="60" width="30" height="100" fill="rgba(255,255,255,0.06)" />
+          ))}
+        </g>
+        <ellipse cx="300" cy="150" rx="206" ry="80" fill="none" stroke="#fff" strokeWidth="2" opacity="0.7" />
+        <line x1="300" y1="70" x2="300" y2="152" stroke="#fff" strokeWidth="2" opacity="0.7" />
+        <ellipse cx="300" cy="150" rx="52" ry="24" fill="none" stroke="#fff" strokeWidth="2" opacity="0.7" />
+        <g className="ball-anim"><text x="220" y="124" fontSize="15">⚽</text></g>
+      </svg>
+    </div>
+  );
+}
+
+function TeamSplit({ selected, onSelect, disabled }) {
+  return (
+    <div style={{ display: "flex", borderRadius: 16, overflow: "hidden", border: "3px solid #fff", boxShadow: "0 4px 14px rgba(0,0,0,.35)" }}>
+      {["spain", "argentina"].map((t, idx) => {
+        const team = TEAMS[t];
+        const active = selected === t;
+        return (
+          <button key={t} disabled={disabled} onClick={() => onSelect(t)}
+            className="flex-1 py-3 px-2 font-black text-lg"
+            style={{
+              background: active ? team.color : "#fff", color: active ? "#fff" : team.color,
+              borderLeft: idx === 0 ? "3px solid #fff" : "none",
+              opacity: disabled && !active ? 0.5 : 1,
+            }}>
+            <span className="block text-3xl">{team.flag}</span>
+            {team.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <label className="block mb-4">
+      <span className="block text-sm font-bold mb-1" style={{ color: DOM.ink }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const inputStyle = {
+  width: "100%", border: "2px solid #BFD3DE", borderRadius: 10, padding: "10px 12px",
+  fontSize: 16, background: "#fff", color: DOM.ink, outline: "none",
+};
+
+function App() {
+  const [phase, setPhase] = useState("loading");
+  const [myId, setMyId] = useState(null);
+  const [me, setMe] = useState(null);
+  const [participants, setParticipants] = useState([]);
+  const [results, setResults] = useState(null);
+  const [tab, setTab] = useState("mine");
+  const [nameInput, setNameInput] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [adminPin, setAdminPin] = useState(null);
+  const [adminForm, setAdminForm] = useState({ winner: "", scoreSpain: "", scoreArgentina: "", firstScorer: "", firstGoalMinute: "", locked: false, note: "" });
+  const [now, setNow] = useState(Date.now());
+  const editingRef = useRef(false);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const refresh = useCallback(async () => {
+    const r = await api("list");
+    if (!r.ok) return r;
+    setParticipants(r.participants || []);
+    setResults(r.results || null);
+    return r;
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const storedId = localStorage.getItem(MY_ID_KEY);
+      const r = await refresh();
+      const ps = r.participants || [];
+      const mine = storedId && ps.find((p) => p.id === storedId);
+      if (mine) { setMyId(storedId); setMe(mine); setPhase("main"); }
+      else setPhase("register");
+    })();
+  }, [refresh]);
+
+  useEffect(() => {
+    const t = setInterval(async () => {
+      const r = await api("list");
+      if (!r.ok) return;
+      setParticipants(r.participants || []);
+      setResults(r.results || null);
+      if (myId && !editingRef.current) {
+        const fresh = (r.participants || []).find((p) => p.id === myId);
+        if (fresh) setMe(fresh);
+      }
+    }, 15000);
+    return () => clearInterval(t);
+  }, [myId]);
+
+  useEffect(() => { if (results) setAdminForm((f) => ({ ...f, ...results })); }, [results]);
+
+  const flash = (t) => { setMsg(t); setTimeout(() => setMsg(""), 3500); };
+
+  async function register() {
+    setBusy(true);
+    const r = await api("register", { name: nameInput });
+    setBusy(false);
+    if (!r.ok) { flash(r.error || "השמירה נכשלה"); return; }
+    localStorage.setItem(MY_ID_KEY, r.participant.id);
+    setMyId(r.participant.id); setMe(r.participant);
+    setPhase("main"); setTab("mine");
+    refresh();
+  }
+
+  async function savePrediction() {
+    if (!me) return;
+    setBusy(true);
+    const r = await api("save", { id: me.id, prediction: me.prediction });
+    setBusy(false);
+    editingRef.current = false;
+    if (r.ok) { flash("הניחוש נשמר! בהצלחה 🍀🍕"); refresh(); }
+    else flash(r.error || "השמירה נכשלה, נסו שוב");
+  }
+
+  function setPred(field, val) {
+    editingRef.current = true;
+    setMe((m) => ({ ...m, prediction: { ...m.prediction, [field]: val } }));
+  }
+
+  async function saveResults(extra) {
+    setBusy(true);
+    const payload = { ...adminForm, ...(extra || {}) };
+    const r = await api("saveResults", { pin: adminPin, results: payload });
+    setBusy(false);
+    if (r.ok) { setResults(r.results); flash("התוצאות עודכנו — כולם רואים עכשיו מי מוביל"); }
+    else flash(r.error || "העדכון נכשל");
+  }
+
+  async function toggleLock() {
+    const nf = { ...adminForm, locked: !adminForm.locked };
+    setAdminForm(nf);
+    const r = await api("saveResults", { pin: adminPin, results: nf });
+    if (r.ok) { setResults(r.results); flash(nf.locked ? "הניחושים ננעלו לכולם 🔒" : "הניחושים נפתחו מחדש 🔓"); }
+    else flash(r.error || "הנעילה נכשלה");
+  }
+
+  async function deleteParticipant(id) {
+    const r = await api("delete", { pin: adminPin, id });
+    if (!r.ok) flash(r.error || "המחיקה נכשלה");
+    refresh();
+  }
+
+  const scored = participants
+    .map((p) => ({ p, s: scoreParticipant(p, results) }))
+    .sort((a, b) => b.s.total - a.s.total);
+  const topScore = scored.length ? scored[0].s.total : 0;
+  const hasAnyResult = results && (results.winner || results.firstScorer || (results.firstGoalMinute !== "" && results.firstGoalMinute != null) || (results.scoreSpain !== "" && results.scoreSpain != null));
+
+  const goldenWinners = [];
+  let goldenClosest = null;
+  if (results && results.firstGoalMinute !== "" && results.firstGoalMinute != null) {
+    const gm = Number(results.firstGoalMinute);
+    let best = Infinity;
+    for (const p of participants) {
+      const d = Math.abs(p.goldenMinute - gm);
+      if (d === 0) goldenWinners.push(p);
+      if (d < best) { best = d; goldenClosest = p; }
+    }
+    if (goldenWinners.length) goldenClosest = null;
+  }
+
+  if (phase === "loading") {
+    return (
+      <div className="wc-root dom-bg min-h-screen flex items-center justify-center" dir="rtl">
+        <div className="text-white wc-display text-4xl">🍕 מכינים את הבצק...</div>
+      </div>
+    );
+  }
+
+  const locked = !!(results && results.locked);
+  const isAdmin = !!adminPin;
+
+  const Header = (
+    <div className="text-center pt-8 pb-4 px-4 relative">
+      <div className="stadium-lights" />
+      <div className="hero-in" style={{ display: "inline-block", filter: "drop-shadow(0 6px 14px rgba(0,0,0,.4))" }}>
+        <svg width="104" height="112" viewBox="0 0 200 214" role="img" aria-label="Domino's Pizza">
+          <g transform="rotate(45 138 56)">
+            <rect x="98" y="16" width="80" height="80" rx="7" fill="#E31837" stroke="#fff" strokeWidth="6" />
+            <circle cx="138" cy="56" r="14" fill="#fff" />
+          </g>
+          <g transform="rotate(45 66 144)">
+            <rect x="18" y="96" width="96" height="96" rx="7" fill="#006491" stroke="#fff" strokeWidth="6" />
+            <circle cx="46" cy="144" r="15" fill="#fff" />
+            <circle cx="86" cy="144" r="15" fill="#fff" />
+          </g>
+        </svg>
+      </div>
+      <div className="wc-display text-white hero-in-2" style={{ fontSize: 54, lineHeight: 1 }}>WINNER המוקד</div>
+      <div className="wc-display hero-in-2" style={{ fontSize: 28, lineHeight: 1.1, color: "#8FCBE8" }}>מוקד דומינוס פיצה 🍕 גמר המונדיאל 2026</div>
+      <div className="flex items-center justify-center gap-3 mt-3">
+        <span className="font-black text-xl" style={{ color: "#FF9DAC" }}>{TEAMS.spain.flag} ספרד</span>
+        <span className="wc-display text-3xl text-white">VS</span>
+        <span className="font-black text-xl" style={{ color: "#8FCBE8" }}>ארגנטינה {TEAMS.argentina.flag}</span>
+      </div>
+      <div className="mt-2 inline-block px-4 py-1 rounded-md text-sm font-bold"
+        style={{ background: "#031A28", border: "2px solid #0A5A80", color: "#F2C94C", letterSpacing: 1, boxShadow: "0 0 14px rgba(242,201,76,.25), inset 0 0 10px rgba(0,0,0,.6)" }}>
+        ⏱ יום ראשון 19.7 · מטלייף, ניו ג'רזי · 22:00
+        {(() => {
+          const diff = KICKOFF - now;
+          if (diff <= 0) return <div className="text-white" style={{ letterSpacing: 2 }}>⚽ המשחק יצא לדרך!</div>;
+          const s = Math.floor(diff / 1000);
+          const days = Math.floor(s / 86400);
+          const hh = String(Math.floor((s % 86400) / 3600)).padStart(2, "0");
+          const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+          const ss = String(s % 60).padStart(2, "0");
+          return (
+            <div style={{ fontVariantNumeric: "tabular-nums", letterSpacing: 2 }}>
+              {days > 0 && <span>{days} ימים · </span>}{hh}:{mm}:{ss}
+              <div className="text-xs" style={{ color: "#8FCBE8", letterSpacing: 0 }}>עד שריקת הפתיחה</div>
+            </div>
+          );
+        })()}
+      </div>
+      {locked && <div className="mt-2 mx-auto w-fit px-3 py-1 rounded-full text-sm font-bold text-white" style={{ background: DOM.red }}>🔒 הניחושים נעולים — המשחק בעיצומו</div>}
+      <StadiumStrip />
+    </div>
+  );
+
+  if (phase === "register") {
+    return (
+      <div className="wc-root dom-bg min-h-screen" dir="rtl">
+        {Header}
+        <div className="max-w-md mx-auto px-4 pb-10">
+          <div className="card p-5" style={{ borderTop: "6px solid " + DOM.red }}>
+            <div className="wc-display text-3xl mb-1" style={{ color: DOM.blue }}>נרשמים לתחרות</div>
+            <p className="text-sm mb-4" style={{ color: DOM.grey }}>
+              ממלאים ניחושים לפני שריקת הפתיחה, מקבלים <b>דקת זהב</b> אישית — ואם השער הראשון יובקע בדיוק בדקה שלכם, זכיתם! 🥳
+              <br /><b>🎁 הפרסים: ספא זוגי · ארוחה · בונוס אקסטרה 300 ₪ ועוד הרבה!</b>
+              <br /><span className="font-bold" style={{ color: DOM.red }}>⚠️ רק מי שנמצא במשמרת משתתף.</span>
+            </p>
+            <Field label="השם שלך (שם + אות משפחה)">
+              <input style={inputStyle} value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="למשל: דנה כ׳" />
+            </Field>
+            <button onClick={register} disabled={busy}
+              className="w-full rounded-xl py-3 font-black text-lg text-white" style={{ background: DOM.red }}>
+              {busy ? "רגע..." : "יאללה, אני בפנים 🍕⚽"}
+            </button>
+            {msg && <div className="mt-3 text-center text-sm font-bold" style={{ color: DOM.red }}>{msg}</div>}
+          </div>
+          <p className="text-center text-xs mt-4" style={{ color: "#A7C4D4" }}>
+            שימו לב: הניחושים והשמות גלויים לכל המשתתפים בתחרות.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="wc-root dom-bg min-h-screen pb-16" dir="rtl">
+      {Header}
+      <div className="max-w-md mx-auto px-4">
+        <div className="flex gap-1 rounded-xl p-1 mb-4" style={{ background: "rgba(255,255,255,.14)" }}>
+          {[["mine", "הניחוש שלי"], ["all", "משתתפים (" + participants.length + ")"], ["leaders", "מי מוביל 🏆"]].map(([k, label]) => (
+            <button key={k} onClick={() => { setTab(k); refresh(); }}
+              className="flex-1 rounded-lg py-2 text-sm font-bold"
+              style={tab === k ? { background: "#fff", color: DOM.blue } : { color: "#fff" }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {msg && <div className="mb-3 text-center text-sm font-bold rounded-lg py-2 text-white" style={{ background: DOM.red }}>{msg}</div>}
+
+        {tab === "mine" && me && (
+          <div className="card p-5" style={{ borderTop: "6px solid " + DOM.blue }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="wc-display text-3xl" style={{ color: DOM.blue }}>היי {me.name} 👋</div>
+              <div className="text-center rounded-xl px-3 py-1 leader-pulse" style={{ background: DOM.blue }}>
+                <div className="text-xs font-bold gold-text">דקת הזהב שלך</div>
+                <div className="wc-display text-3xl leading-none gold-text">{me.goldenMinute}'</div>
+              </div>
+            </div>
+
+            <Field label="✅ מי תנצח בגמר?">
+              <TeamSplit selected={me.prediction.winner} onSelect={(t) => setPred("winner", t)} disabled={locked} />
+            </Field>
+
+            <Field label="✅ מה תהיה התוצאה? (בסיום המשחק)">
+              <div className="flex items-center gap-2">
+                <div className="flex-1 text-center">
+                  <div className="text-xs font-bold mb-1" style={{ color: DOM.red }}>{TEAMS.spain.flag} ספרד</div>
+                  <input type="number" min="0" max="15" style={inputStyle} disabled={locked}
+                    value={me.prediction.scoreSpain} onChange={(e) => setPred("scoreSpain", e.target.value)} />
+                </div>
+                <div className="wc-display text-3xl pt-4" style={{ color: DOM.ink }}>:</div>
+                <div className="flex-1 text-center">
+                  <div className="text-xs font-bold mb-1" style={{ color: DOM.blue }}>{TEAMS.argentina.flag} ארגנטינה</div>
+                  <input type="number" min="0" max="15" style={inputStyle} disabled={locked}
+                    value={me.prediction.scoreArgentina} onChange={(e) => setPred("scoreArgentina", e.target.value)} />
+                </div>
+              </div>
+            </Field>
+
+            <Field label="✅ מי יבקיע את השער הראשון?">
+              <input style={inputStyle} disabled={locked} placeholder="למשל: לאמין ימאל / מסי"
+                value={me.prediction.firstScorer} onChange={(e) => setPred("firstScorer", e.target.value)} />
+            </Field>
+
+            <Field label="✅ באיזו דקה יובקע השער הראשון? (1–120)">
+              <input type="number" min="1" max="120" style={inputStyle} disabled={locked}
+                value={me.prediction.firstGoalMinute} onChange={(e) => setPred("firstGoalMinute", e.target.value)} />
+            </Field>
+
+            <button onClick={savePrediction} disabled={busy || locked}
+              className="w-full rounded-xl py-3 font-black text-lg text-white"
+              style={{ background: locked ? "#93A8B5" : DOM.red }}>
+              {locked ? "🔒 הניחושים נעולים" : busy ? "שומר..." : "שמירת הניחוש 🍕"}
+            </button>
+
+            <div className="mt-4 rounded-xl p-4" style={{ background: "#EFF6FA", border: "2px solid #BFD3DE" }}>
+              <div className="wc-display text-2xl mb-1" style={{ color: DOM.blue }}>שיטת הניקוד 🎯</div>
+              <div className="text-sm" style={{ color: DOM.ink }}>
+                <div className="flex justify-between py-1" style={{ borderBottom: "1px solid #D8E5EC" }}><span>תוצאה מדויקת</span><b style={{ color: DOM.red }}>5 נק'</b></div>
+                <div className="flex justify-between py-1" style={{ borderBottom: "1px solid #D8E5EC" }}><span>המבקיע הראשון</span><b style={{ color: DOM.red }}>4 נק'</b></div>
+                <div className="flex justify-between py-1" style={{ borderBottom: "1px solid #D8E5EC" }}><span>דקת השער הראשון — בול</span><b style={{ color: DOM.red }}>4 נק'</b></div>
+                <div className="flex justify-between py-1" style={{ borderBottom: "1px solid #D8E5EC" }}><span>דקת השער — טווח של ±5 דקות</span><b style={{ color: DOM.red }}>2 נק'</b></div>
+                <div className="flex justify-between py-1"><span>הקבוצה המנצחת</span><b style={{ color: DOM.red }}>3 נק'</b></div>
+              </div>
+              <div className="text-xs mt-2 font-bold rounded-lg px-3 py-2 gold-text" style={{ background: DOM.blue }}>
+                🌟 דקת הזהב היא פרס נפרד: פגיעה מדויקת בדקה שקיבלתם = זכייה. אם אף אחד לא פגע — הכי קרוב זוכה.
+              </div>
+              <div className="text-sm mt-2 font-black text-center rounded-lg px-3 py-2 text-white" style={{ background: DOM.red }}>
+                🎁 הפרסים: ספא זוגי · ארוחה · בונוס אקסטרה 300 ₪ ועוד הרבה!
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "all" && (
+          <div className="space-y-3">
+            {participants.length === 0 && <div className="card p-5 text-center font-bold">עדיין אין נרשמים — תהיו הראשונים!</div>}
+            {participants.map((p) => {
+              const pr = p.prediction || {};
+              const team = TEAMS[pr.winner];
+              return (
+                <div key={p.id} className="card p-4" style={{ borderRight: "5px solid " + (team ? team.color : "#BFD3DE") }}>
+                  <div className="flex items-center justify-between">
+                    <div className="font-black text-lg" style={{ color: DOM.ink }}>
+                      {p.name} {p.id === myId && <span className="text-xs font-bold" style={{ color: DOM.red }}>(את/ה)</span>}
+                    </div>
+                    <div className="text-xs font-bold rounded-full px-2 py-1 gold-text" style={{ background: DOM.blue }}>דקת זהב: {p.goldenMinute}'</div>
+                  </div>
+                  <div className="text-sm mt-1" style={{ color: DOM.grey }}>
+                    {team ? <span className="font-bold" style={{ color: team.color }}>{team.flag} {team.name}</span> : "עוד לא ניחש/ה"}
+                    {pr.scoreSpain !== "" && pr.scoreSpain != null && pr.scoreArgentina !== "" && pr.scoreArgentina != null && (
+                      <span> · תוצאה {pr.scoreSpain}:{pr.scoreArgentina}</span>
+                    )}
+                    {pr.firstScorer && <span> · מבקיע ראשון: {pr.firstScorer}</span>}
+                    {pr.firstGoalMinute !== "" && pr.firstGoalMinute != null && <span> · דקה {pr.firstGoalMinute}'</span>}
+                  </div>
+                  {isAdmin && (
+                    <button onClick={() => deleteParticipant(p.id)} className="mt-2 text-xs font-bold" style={{ color: DOM.red }}>
+                      הסרת משתתף
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {tab === "leaders" && (
+          <div className="space-y-3">
+            <div className="card p-4" style={{ borderTop: "6px solid " + DOM.blue }}>
+              <div className="wc-display text-2xl mb-1" style={{ color: DOM.blue }}>מצב המשחק</div>
+              {hasAnyResult ? (
+                <div className="text-sm font-bold" style={{ color: DOM.ink }}>
+                  {results.winner && <div>🏆 מנצחת: {TEAMS[results.winner] && TEAMS[results.winner].flag} {TEAMS[results.winner] && TEAMS[results.winner].name}</div>}
+                  {results.scoreSpain !== "" && results.scoreSpain != null && results.scoreArgentina !== "" && results.scoreArgentina != null && (
+                    <div>📊 תוצאה: ספרד {results.scoreSpain} : {results.scoreArgentina} ארגנטינה</div>
+                  )}
+                  {results.firstScorer && <div>⚽ מבקיע ראשון: {results.firstScorer}</div>}
+                  {results.firstGoalMinute !== "" && results.firstGoalMinute != null && <div>⏱️ דקת השער הראשון: {results.firstGoalMinute}'</div>}
+                  {results.note && <div className="mt-1" style={{ color: DOM.grey }}>📣 {results.note}</div>}
+                </div>
+              ) : (
+                <div className="text-sm" style={{ color: DOM.grey }}>עוד לא הוזנו תוצאות — הדירוג יתעדכן ברגע שהמשחק יתחיל. הדף מתרענן אוטומטית כמו פיצה בתנור ⏳🍕</div>
+              )}
+            </div>
+
+            {(goldenWinners.length > 0 || goldenClosest) && (
+              <div className="card p-4 leader-pulse" style={{ border: "3px solid " + DOM.gold }}>
+                <div className="wc-display text-2xl" style={{ color: "#A8842B" }}>🌟 דקת הזהב</div>
+                {goldenWinners.length > 0 ? (
+                  <div className="font-black" style={{ color: DOM.ink }}>פגיעה מדויקת! {goldenWinners.map((p) => p.name).join(", ")} 🥳</div>
+                ) : (
+                  <div className="font-bold text-sm" style={{ color: DOM.ink }}>אין פגיעה מדויקת — הכי קרוב: {goldenClosest.name} (דקה {goldenClosest.goldenMinute}')</div>
+                )}
+              </div>
+            )}
+
+            {scored.map(({ p, s }, i) => {
+              const leader = hasAnyResult && s.total === topScore && topScore > 0;
+              return (
+                <div key={p.id} className={"card p-4 flex items-center gap-3 " + (leader ? "leader-pulse" : "")}
+                  style={leader ? { border: "3px solid " + DOM.red } : {}}>
+                  <div className="wc-display text-3xl w-8 text-center" style={{ color: leader ? DOM.red : "#93A8B5" }}>
+                    {leader ? "👑" : i + 1}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-black" style={{ color: DOM.ink }}>{p.name}</div>
+                    {s.parts.length > 0 && (
+                      <div className="text-xs" style={{ color: DOM.grey }}>
+                        {s.parts.map((x) => x.label + " +" + x.pts).join(" · ")}
+                      </div>
+                    )}
+                  </div>
+                  <div className="wc-display text-4xl" style={{ color: leader ? DOM.red : DOM.blue }}>{s.total}</div>
+                </div>
+              );
+            })}
+            {scored.length === 0 && <div className="card p-5 text-center font-bold">אין עדיין משתתפים</div>}
+          </div>
+        )}
+
+        <div className="text-center mt-6">
+          <button onClick={() => setAdminOpen(true)} className="text-xs font-bold" style={{ color: "#A7C4D4" }}>
+            ⚙️ ניהול התחרות (למנהלים)
+          </button>
+        </div>
+      </div>
+
+      {adminOpen && (
+        <div className="fixed inset-0 flex items-end justify-center p-3" style={{ background: "rgba(0,30,45,.7)", zIndex: 50 }} dir="rtl">
+          <div className="card w-full max-w-md p-5 overflow-auto" style={{ maxHeight: "90vh", borderTop: "6px solid " + DOM.red }}>
+            <div className="flex justify-between items-center mb-3">
+              <div className="wc-display text-3xl" style={{ color: DOM.blue }}>עמדת השופט ⚙️</div>
+              <button onClick={() => setAdminOpen(false)} className="font-black text-xl" style={{ color: DOM.ink }}>✕</button>
+            </div>
+
+            {!isAdmin ? (
+              <div>
+                <Field label="קוד ניהול">
+                  <input style={inputStyle} type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="****" />
+                </Field>
+                <button onClick={async () => {
+                  const r = await api("auth", { pin: pinInput });
+                  if (r.ok) setAdminPin(pinInput); else flash(r.error || "קוד שגוי");
+                }}
+                  className="w-full rounded-xl py-3 font-black text-white" style={{ background: DOM.blue }}>
+                  כניסה
+                </button>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs mb-3" style={{ color: DOM.grey }}>מעדכנים תוך כדי המשחק — כל שדה שתמלאו יעדכן מיד את הדירוג אצל כולם. אפשר למלא חלקית (למשל רק את השער הראשון).</p>
+
+                <Field label="נעילת ניחושים (בשריקת הפתיחה) — נשמר מיד לכולם">
+                  <button onClick={toggleLock}
+                    className="w-full rounded-xl py-2 font-black"
+                    style={{ background: adminForm.locked ? DOM.red : "#DCE8EF", color: adminForm.locked ? "#fff" : DOM.ink }}>
+                    {adminForm.locked ? "🔒 נעול — לחצו לפתיחה" : "🔓 פתוח — לחצו לנעילה"}
+                  </button>
+                </Field>
+
+                <Field label="מנצחת">
+                  <select style={inputStyle} value={adminForm.winner} onChange={(e) => setAdminForm((f) => ({ ...f, winner: e.target.value }))}>
+                    <option value="">— טרם הוכרע —</option>
+                    <option value="spain">🇪🇸 ספרד</option>
+                    <option value="argentina">🇦🇷 ארגנטינה</option>
+                  </select>
+                </Field>
+
+                <Field label="תוצאה (ספרד : ארגנטינה)">
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="0" style={inputStyle} value={adminForm.scoreSpain}
+                      onChange={(e) => setAdminForm((f) => ({ ...f, scoreSpain: e.target.value }))} />
+                    <span className="wc-display text-2xl">:</span>
+                    <input type="number" min="0" style={inputStyle} value={adminForm.scoreArgentina}
+                      onChange={(e) => setAdminForm((f) => ({ ...f, scoreArgentina: e.target.value }))} />
+                  </div>
+                </Field>
+
+                <Field label="המבקיע הראשון">
+                  <input style={inputStyle} value={adminForm.firstScorer}
+                    onChange={(e) => setAdminForm((f) => ({ ...f, firstScorer: e.target.value }))} placeholder="שם השחקן" />
+                </Field>
+
+                <Field label="דקת השער הראשון">
+                  <input type="number" min="1" max="120" style={inputStyle} value={adminForm.firstGoalMinute}
+                    onChange={(e) => setAdminForm((f) => ({ ...f, firstGoalMinute: e.target.value }))} />
+                </Field>
+
+                <Field label="הודעה לכולם (אופציונלי)">
+                  <input style={inputStyle} value={adminForm.note}
+                    onChange={(e) => setAdminForm((f) => ({ ...f, note: e.target.value }))} placeholder="למשל: גול!! מסי בדקה 23 🔥" />
+                </Field>
+
+                <button onClick={() => saveResults()} disabled={busy}
+                  className="w-full rounded-xl py-3 font-black text-lg text-white" style={{ background: DOM.red }}>
+                  {busy ? "מעדכן..." : "עדכון בזמן אמת 📣"}
+                </button>
+                <p className="text-xs mt-2 text-center" style={{ color: DOM.grey }}>הסרת משתתפים זמינה בלשונית "משתתפים" כשאתם מחוברים כמנהלים.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
