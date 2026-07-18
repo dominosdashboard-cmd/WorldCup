@@ -162,9 +162,9 @@ function StadiumStrip() {
   );
 }
 
-function TeamSplit({ selected, onSelect, disabled }) {
+function TeamSplit({ selected, onSelect, disabled, highlight }) {
   return (
-    <div style={{ display: "flex", borderRadius: 16, overflow: "hidden", border: "3px solid #fff", boxShadow: "0 4px 14px rgba(0,0,0,.35)" }}>
+    <div className={highlight ? "leader-pulse" : ""} style={{ display: "flex", borderRadius: 16, overflow: "hidden", border: highlight ? "3px solid " + DOM.red : "3px solid #fff", boxShadow: "0 4px 14px rgba(0,0,0,.35)" }}>
       {["spain", "argentina"].map((t, idx) => {
         const team = TEAMS[t];
         const active = selected === t;
@@ -325,6 +325,7 @@ function App() {
 
   async function savePrediction() {
     if (!me) return;
+    if (!me.prediction.winner) { flash("⚠️ שימו לב: לא בחרתם מי תנצח! גללו למעלה ובחרו קבוצה 👆"); return; }
     setBusy(true);
     const r = await api("save", { id: me.id, prediction: me.prediction });
     setBusy(false);
@@ -768,8 +769,11 @@ function App() {
               </div>
             </div>
 
-            <Field label="✅ מי תנצח בגמר?">
-              <TeamSplit selected={me.prediction.winner} onSelect={(t) => setPred("winner", t)} disabled={locked} />
+            <Field label="✅ מי תנצח בגמר? — חובה 🔴">
+              <TeamSplit selected={me.prediction.winner} onSelect={(t) => setPred("winner", t)} disabled={locked} highlight={!me.prediction.winner} />
+              {!me.prediction.winner && (
+                <div className="text-xs font-bold mt-1 text-center" style={{ color: DOM.red }}>👆 חובה לבחור קבוצה כדי להשתתף בתחרות!</div>
+              )}
             </Field>
 
             <Field label="✅ מה תהיה התוצאה? (בסיום המשחק)">
